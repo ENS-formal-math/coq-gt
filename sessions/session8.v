@@ -75,6 +75,27 @@ Qed.
 
 End ListHas.
 
+(* coercion *)
+
+Section CoercionExample.
+
+Fail Example bool_theorem : Nat.eqb 2 2.
+
+(* f: C -> D is a coercion iff
+   - D is user defined class : f: ... -> D
+   - D is Funclass (A -> B): f: ... -> A -> B
+   - D is Sortclass (Type, Set, Prop): f: ... -> sort *)
+
+Definition is_true b := b = true.
+Check is_true.
+
+Coercion is_true : bool >-> Sortclass. (* Prop *)
+
+Example bool_theorem : Nat.eqb 2 2.
+Proof. reflexivity. Qed.
+
+End CoercionExample.
+
 (* equality reflection *)
 
 Module Equality.
@@ -117,7 +138,28 @@ Proof.
               injection G. apply np.
 Qed.        
 
-Section WrongEqType.
+(* In order for Coq to know which type to wrap inside eqType, we have
+   to present a canonical solution *)
+
+Definition nat_eqMixin := Equality.Mixin nat Nat.eqb nat_refl.
+Canonical nat_eqType := @Equality.Pack nat nat_eqMixin.
+
+(* Now Coq internally has a global table of solutions
+   nat -> nat_eqType which it's able to use. 
+   It is useful since we can define a Record type with some functionality and
+   then define new canonical solution for some external type T, which will immediately
+   enjoy all prooved properties *)
+
+Compute (3 == 3).
+
+Example nat_eq: (2 + 1 == 3).
+Proof. simpl. reflexivity. Qed.
+
+(* In order to see how this section works, 
+   unfortunately you have to comment out Canonical nat_eqType definition, since 
+   it's already defined globablly in Coq *)
+
+Module WrongEqType.
 
 Definition nat_eqMixin : Equality.mixin_of nat.
 Proof.
@@ -136,17 +178,35 @@ Compute (2 + 1 == 3).
         end 3 3
         : bool
 *)
-Unset Printing Notations.
 
 Example test: (2 + 1 == 3) = true.
 Proof.
-    unfold eq_op. unfold nat_eqType.
-    simpl. destruct nat_eqMixin. specialize (r 3 3). inversion r.
-    - symmetry. unfold eq_op. unfold nat_eqType. simpl. apply H0.
+    unfold eq_op. unfold nat_eqTypeWrong. simpl. destruct nat_eqMixin.
+    simpl. specialize (r 3 3). inversion r.
+    - reflexivity.
+    - destruct np. reflexivity.
+Qed.
 
-End WrongEqType.
+Module WrongEqType.
 
-Definition nat_eqMixin := Equality.Mixin nat Nat.eqb nat_refl.
+(* We uncovered that the probelm with Module WrongEqType is that 
+   when we define nat_eqMixin using Proof and Qed, Coq totally forgets the proof object itself.
+   Therefore, it cannot compute the result of 2 + 1 == 3. What we proved in theorem test
+   is an actual proof of 2 + 1 == 3 from bare axiom included in nat_eqMixin that
+   operation op reflects equality = 
+   Thus, the correct way to define nat_eqMixin using proof mode is given below.
+   (to see it we have to again comment out the previous canonical definitions )*)
 
-Example nat_eq: (2 + 1 == 3) = true.
-Proof. simpl. reflexivity. Qed.
+Module WrongEqTypeFixed.
+
+Definition nat_eqMixin : Equality.mixin_of nat.
+    apply (Equality.Mixin nat Nat.eqb). apply nat_refl.
+Defined.
+
+Canonical nat_eqType := @Equality.Pack nat nat_eqMixin.
+
+Example test: (2 + 1 == 3).
+Proof. reflexivity. Qed.
+
+Module WrongEqTypeFixed.
+
